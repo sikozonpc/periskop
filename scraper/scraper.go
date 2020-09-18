@@ -14,8 +14,26 @@ import (
 
 type errorAggregateMap map[string]errorAggregate
 
+type instanceToErrorAggregateMap map[string]errorAggregateMap
+
 func (errorAggregateMap errorAggregateMap) combine(aggregatedErrors []errorAggregate) {
 	for _, item := range aggregatedErrors {
+		if existing, exists := errorAggregateMap[item.AggregationKey]; exists {
+			errorAggregateMap[item.AggregationKey] = errorAggregate{
+				TotalCount:     existing.TotalCount + item.TotalCount,
+				AggregationKey: existing.AggregationKey,
+				Severity:       item.Severity,
+				LatestErrors:   combine(existing.LatestErrors, item.LatestErrors),
+			}
+		} else {
+			errorAggregateMap[item.AggregationKey] = item
+		}
+	}
+}
+
+func (errorAggregateMap errorAggregate) merge(prev errorAggregateMap) {
+	for _, item := range aggregatedErrors {
+		if 
 		if existing, exists := errorAggregateMap[item.AggregationKey]; exists {
 			errorAggregateMap[item.AggregationKey] = errorAggregate{
 				TotalCount:     existing.TotalCount + item.TotalCount,
@@ -59,6 +77,9 @@ func (scraper Scraper) Scrape() {
 	var resolvedAddresses = servicediscovery.EmptyResolvedAddresses()
 	timer := time.NewTimer(scraper.ServiceConfig.Scraper.RefreshInterval)
 
+	// instance -> aggregateError[]
+	var prevMap := make(instanceToErrorAggregateMap)
+
 	for {
 		select {
 		case newResult := <-resolutions:
@@ -68,11 +89,33 @@ func (scraper Scraper) Scrape() {
 
 		case <-timer.C:
 			timer.Stop()
-			var currentAggregatedErrorsMap = make(errorAggregateMap)
+			// var currentAggregatedErrorsMap = make(errorAggregateMap)
+			var currentMap = make(instanceToErrorAggregateMap)
 			for responsePayload := range scrapeInstances(resolvedAddresses.Addresses, serviceConfig.Scraper.Endpoint,
-				scraper.processor) {
-				currentAggregatedErrorsMap.combine(responsePayload)
+				scraper.processor) { // [instance -> errorAggreage[], 2 -> []] := 
+					// errorAggregate for a given instance.
+					prevErrorMap := prev[responsePayload.instance] 
+					// updated value for an instance with previous result for this instance taken into account.
+					merged := responsePayload.errorAggregate.merge(prevErrorMap)
+					// instance -> errorAggregate[]
+					currentMap[responsePayload.instance] = merged
+
+					// currentMap[responsePayload.instance] = responsePayload.errorAggregate
+				// currentAggregatedErrorsMap.combine(responsePayload)
 			}
+
+			current = current + (previous - current)
+
+			var currentAggregatedErrorsMap = make(errorAggregateMap)
+			for instance, errorAggregate := range currentMap {
+				currentAggregatedErrorsMap.combine(errorAggregate)
+			}
+
+			prevMap = current // strinng -> errorAggregate[]
+			// compare with prev by instance key.
+			// calculate current value as: prev.value + (if (current.value > prev.value) current.value - prev.value) else 0)
+			// -> list[responsePlayload] (with correct values)
+			// use old combine
 			store(serviceConfig.Name, scraper.Repository, currentAggregatedErrorsMap)
 			numInstances := len(resolvedAddresses.Addresses)
 			numErrors := len(currentAggregatedErrorsMap)
