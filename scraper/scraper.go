@@ -31,20 +31,8 @@ func (errorAggregateMap errorAggregateMap) combine(aggregatedErrors []errorAggre
 	}
 }
 
-func (errorAggregateMap errorAggregate) merge(prev errorAggregateMap) {
-	for _, item := range aggregatedErrors {
-		if 
-		if existing, exists := errorAggregateMap[item.AggregationKey]; exists {
-			errorAggregateMap[item.AggregationKey] = errorAggregate{
-				TotalCount:     existing.TotalCount + item.TotalCount,
-				AggregationKey: existing.AggregationKey,
-				Severity:       item.Severity,
-				LatestErrors:   combine(existing.LatestErrors, item.LatestErrors),
-			}
-		} else {
-			errorAggregateMap[item.AggregationKey] = item
-		}
-	}
+func merge(prev errorAggregateMap, ea []errorAggregate) errorAggregateMap {
+
 }
 
 func combine(first []errorWithContext, second []errorWithContext) []errorWithContext {
@@ -77,8 +65,9 @@ func (scraper Scraper) Scrape() {
 	var resolvedAddresses = servicediscovery.EmptyResolvedAddresses()
 	timer := time.NewTimer(scraper.ServiceConfig.Scraper.RefreshInterval)
 
-	// instance -> aggregateError[]
-	var prevMap := make(instanceToErrorAggregateMap)
+	var currentAggregatedErrorsMap = make(errorAggregateMap)
+
+	var prevMap = make(instanceToErrorAggregateMap)
 
 	for {
 		select {
@@ -89,19 +78,18 @@ func (scraper Scraper) Scrape() {
 
 		case <-timer.C:
 			timer.Stop()
-			// var currentAggregatedErrorsMap = make(errorAggregateMap)
 			var currentMap = make(instanceToErrorAggregateMap)
 			for responsePayload := range scrapeInstances(resolvedAddresses.Addresses, serviceConfig.Scraper.Endpoint,
-				scraper.processor) { // [instance -> errorAggreage[], 2 -> []] := 
-					// errorAggregate for a given instance.
-					prevErrorMap := prev[responsePayload.instance] 
-					// updated value for an instance with previous result for this instance taken into account.
-					merged := responsePayload.errorAggregate.merge(prevErrorMap)
-					// instance -> errorAggregate[]
-					currentMap[responsePayload.instance] = merged
+				scraper.processor) { // [instance -> errorAggreage[], 2 -> []] :=
+				// errorAggregate for a given instance.
+				prevErrorMap := prevMap[responsePayload.Instance]
+				// updated value for an instance with previous result for this instance taken into account.
+				merged := merge(prevErrorMap, responsePayload.ErrorAggregate)
+				// instance -> errorAggregate[]
+				prevMap[responsePayload.Instance] = merged
 
-					// currentMap[responsePayload.instance] = responsePayload.errorAggregate
-				// currentAggregatedErrorsMap.combine(responsePayload)
+				// currentMap[responsePayload.instance] = responsePayload.errorAggregate
+				currentAggregatedErrorsMap.combine(merged)
 			}
 
 			current = current + (previous - current)
