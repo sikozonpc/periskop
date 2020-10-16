@@ -46,22 +46,22 @@ func (errorAggregates errorAggregateMap) combine(serviceName string, r *reposito
 			targetErrorsCount[rp.Target] = make(map[string]int)
 		}
 		prevErrorInstances := errorInstancesAccumulator[item.AggregationKey]
+		lastestErrors := combineLastErrors(prevErrorInstances, item.LatestErrors)
 		if existing, exists := errorAggregates[item.AggregationKey]; exists {
 			prevCount := targetErrorsCount[rp.Target][item.AggregationKey]
-			lastestErrors := combineLastErrors(prevErrorInstances, item.LatestErrors)
+
 			errorAggregates[item.AggregationKey] = errorAggregate{
 				TotalCount:     existing.TotalCount + (item.TotalCount - prevCount),
 				AggregationKey: existing.AggregationKey,
 				Severity:       item.Severity,
 				LatestErrors:   lastestErrors,
+				CreatedAt:      existing.CreatedAt,
 			}
-			targetErrorsCount[rp.Target][item.AggregationKey] = item.TotalCount
-			errorInstancesAccumulator[item.AggregationKey] = lastestErrors
 		} else {
 			errorAggregates[item.AggregationKey] = item
-			targetErrorsCount[rp.Target][item.AggregationKey] = item.TotalCount
-			errorInstancesAccumulator[item.AggregationKey] = item.LatestErrors
 		}
+		targetErrorsCount[rp.Target][item.AggregationKey] = item.TotalCount
+		errorInstancesAccumulator[item.AggregationKey] = lastestErrors
 		// If an error that was previously mark as resolved is scrapped again
 		// it's going to be added to list of errors
 		(*r).RemoveResolved(serviceName, item.AggregationKey)
